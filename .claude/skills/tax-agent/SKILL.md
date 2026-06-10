@@ -19,6 +19,44 @@ description: HOMIN CHOI 전용 한/미 세무 데이터 자동 정제 에이전�
   필요한 패키지가 없으면 `pip install` 후 진행한다.
 - 절대 임의의 환율이나 금액을 지어내지 않는다. 원본 데이터에 없는 값은 추정하지 않는다.
 
+## 알려진 입력 파일 형식 (2025년 신고 기준)
+
+사용자는 보통 아래 두 종류의 파일을 업로드한다. 컬럼명이 다소 달라져도 같은 의미의
+컬럼으로 매핑하여 처리한다.
+
+### 형식 A: 세금신고 정리 파일 (4개 시트 워크북)
+
+| 시트명 | 컬럼 구조 |
+|---|---|
+| `Summary` | B1 셀에 **단일 환율(KRW/USD)** 입력 → 전체 시트 USD 환산에 사용. Category / Amount (KRW) / Amount (USD) / Note |
+| `Sched D - Capital Gains` | Sale Date, Stock Name, Quantity, Sale Price (KRW), Sale Price (USD), Cost Basis (KRW), Cost Basis (USD), Gain/Loss (KRW), Gain/Loss (USD) |
+| `Sched B - Dividends` | Payment Date, Stock Name, Gross Dividend (KRW), Gross Dividend (USD), Foreign Tax Withheld (KRW), Foreign Tax Withheld (USD) |
+| `Interest Expense` | Month, Interest Paid (KRW), Interest Paid (USD) |
+
+**알려진 한계 (검증 시 반드시 확인할 것):**
+- 25년 파일은 거래일별 환율이 아닌 **단일 환율(예: 1420)** 을 전 거래에 일괄 적용했다.
+  IRS는 거래일 환율 또는 IRS 연평균 환율(yearly average exchange rate)을 인정하므로,
+  적용된 환율이 어느 방식인지 Step 1에서 확인하고 결과에 명시한다.
+- `Sched D` 시트에는 **취득일(Date acquired) 컬럼이 없다.** 장기/단기 분류는 형식 B의
+  원본 매수내역에서 종목코드/종목명 기준으로 역추적(FIFO 가정)하여 도출하고,
+  역추적이 불가능한 종목은 비고란에 `추정/가능성 확인 요망`을 표기한다.
+
+### 형식 B: 증권사 원본 거래내역 (키움증권 영웅문 export, 단일 시트)
+
+헤더 컬럼: 거래일자, 거래소, 종목명, 거래종류, 거래수량, 거래단가, 거래금액, 수수료,
+거래세/농특세, 소득세/주민세, 정산금액, 미수발생, 미수변제, 연체변제, 예수금, 유가잔고,
+대출상환금, 신용/대출이자, 대출일, 상환자금, 매체구분, 처리시간, 종목코드
+
+- 모든 금액은 KRW이며 USD 환산 컬럼이 없다 → Step 1에서 환산 기준을 정한 뒤 처리한다.
+- `거래종류`로 행 성격을 구분한다 (앞뒤 공백 주의):
+  - 매수: `…매수` 포함 (예: `자기융자매수 KOSDAQ매수(융자)`) → 취득일/취득가 산출에 사용
+  - 매도: `…매도` 포함 → Sched D Proceeds 산출에 사용
+  - 이자비용: `신용융자이자출금` 포함 → Interest Expense로 집계 (`신용/대출이자` 컬럼 사용)
+  - 배당: `배당` 포함 → Sched B로 집계 (`소득세/주민세` 컬럼이 원천징수세)
+- 양도소득 계산 시 `수수료`와 `거래세/농특세`는 매도 시 Proceeds에서 차감,
+  매수 시 Cost basis에 가산한다.
+- 동일 종목 부분 매도 시 **FIFO**로 매수 lot과 매칭하고, 보고서에 FIFO 가정임을 명시한다.
+
 ## [강제 워크플로우]
 
 ### Step 1: 데이터 무결성 검증 (Data Check)
